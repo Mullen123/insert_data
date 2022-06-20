@@ -1,13 +1,17 @@
 //npm install oracledb
 //npm install moment --save 
+//npm i chardet
 const oracledb = require('oracledb');
 const fs = require('fs');
 var moment = require('moment'); 
+const chardet = require('chardet');
+var iconv = require('iconv-lite');
+
 
 async function run() {
 
   /*nombre del archivo*/
-  let namefile =  "";
+  let namefile = "";
 
 //AQUI VA EL NOMBRE DEL ESQUEMA DONDE VAMOS A ALMACENAR
 let nameisr = '';
@@ -32,11 +36,40 @@ var exp_num = /^([0-9]*)\.?[0-9]+$/;
 let exp_num2 = /^((0+)([0-9]+))$/;
 
 
-function readFile() {
+let codificacion = chardet.detectFileSync(namefile);
+console.log(codificacion);
 
-  if (namefile.match(exp_csv) || namefile.match(exp_txt) ) {
 
-   let  data = fs.readFileSync(namefile)
+function readFile(){
+  if(codificacion != 'UTF-8'){
+
+    if (namefile.match(exp_csv) || namefile.match(exp_txt) ) {
+     data = iconv.decode(fs.readFileSync(namefile), codificacion)
+
+.split('\n') //separamos por salto de linea
+    .map(element => element.trim()) //removemos espacion en blanco
+    .map(element => element.split('|').
+      map(element => element.trim())
+        ); //  quitamos el pipe y los espacios por cada linea del arreglo
+    
+//quitamos la parte de los encabezados
+val = data.splice(1);
+/*evaluamos si es number  o string*/
+values = val.map(element=>{
+ for(i in element){
+  if(!element[i].match(exp_num)){
+    element[i] = element[i];
+  }else{
+    if(element[i].match(exp_num2)){element[i] = element[i]; }
+    else{ element[i] =+ element[i];}}
+  }
+  return element ;
+});
+
+}
+}else{
+
+ let  data = fs.readFileSync(namefile)
     .toString() // convertimos el buffer a string
     .split('\n') //separamos por salto de linea
     .map(element => element.trim()) //removemos espacion en blanco
@@ -58,11 +91,10 @@ values = val.map(element=>{
   return element ;
 });
 
-} 
-  //console.log(values);
-  return values;
 
-}//termina la funcion extension
+}
+return values;
+}
 
 function addNull(){
 
@@ -76,7 +108,9 @@ function addNull(){
    rows = addNull();
    for (i in rows){longitud = rows[i];
     for (j in longitud) {if(typeof(longitud[j])=== 'string'&& longitud[j].match(exp_yyyymmdd)){
-      longitud[j]= moment(longitud[j]).format('DD/MM/YYYY')
+      if(longitud[j].length == 10){
+        longitud[j]= moment(longitud[j]).format('DD/MM/YYYY')
+      }
     }
   }
   auxrows.push(longitud);
@@ -85,10 +119,12 @@ return auxrows;
 }
 
 
+
+
 try {
 
   //generamos una conexión a la base de datos
-  connection = await oracledb.getConnection({ user:, password: , connectionString: });
+  connection = await oracledb.getConnection({user: , password: , connectionString: });
   console.log("Conexión Exitosa !!!!");
 
 
@@ -97,7 +133,6 @@ try {
   if(namefile.includes('COMPROBANTES')||namefile.includes('DC')){
 
     aux_array = date();
-
 
 
     function insertComprobantes(){
@@ -117,8 +152,9 @@ try {
           )`;
 
           result = await connection.executeMany(sql,aux_array);
+
           if(result){
-            return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
+            return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + aux_array.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
           }else{
 
             throw new Error ('error al realizar la inserccion');
@@ -235,6 +271,39 @@ connection.commit();
 }
 
 
+/*####################### INCAPACIDADES ###########################*/
+
+else if(namefile.includes('INCAPACIDADES')||namefile.includes('CNI')){
+ rows = addNull();
+
+ function insertIncapacidad(){
+  try{
+    return new Promise( async function(succes,reject){
+      sql = `INSERT INTO M4T_INCAPACIDADES_CNI_33`+ nameisr+ `( IDINCAPACIDAD,IDNOMINA,DIASINCAPACIDAD,TIPOINCAPACIDAD,IMPORTEMONETARIO,IDUSUARIO,FG,ST)  values(:1, :2, :3, :4, :5 ,:6, :7, :8 ,:9)`;
+
+      result = await connection.executeMany(sql,rows);
+
+
+      if(result){
+        return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
+
+      }else{
+
+       throw new Error('error al realizar la inserccion');
+     }
+   });
+  }catch(e){
+
+    return reject(e);
+  }
+}
+insertIncapacidad().then(function(succes){console.log(succes);})
+.catch(function(reject){ console.log(reject);});
+connection.commit();
+}
+
+
+
 
 /*####################### NOMINA  ###########################*/
 
@@ -259,7 +328,7 @@ else if(namefile.includes('NOMINA')||namefile.includes('CNR')){
 
 
       if(result){
-        return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
+        return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + aux_array.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
 
       }else{
 
@@ -285,7 +354,7 @@ connection.commit();
 else if(namefile.includes('OTROSPAGOS')||namefile.includes('NOP')){
  rows = addNull();
 
-
+ aux_rows = rows.map(element=>{for (i in element){element[2]  =element[2].toString();}return element;});
 
  function insertOtros_Pagos(){
 
@@ -299,7 +368,7 @@ else if(namefile.includes('OTROSPAGOS')||namefile.includes('NOP')){
 
 
       if(result){
-        return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
+        return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' +  aux_rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
 
       }else{
 
@@ -376,7 +445,7 @@ else if(namefile.includes('PERCEPCION')||namefile.includes('NPD')){
       result = await connection.executeMany(sql,aux_array);
 
       if(result){
-        return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
+        return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + aux_array.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
 
       }else{
 
