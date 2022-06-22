@@ -32,7 +32,6 @@ let exp_yyyymmdd = /(\d{4})[./-](\d{2})[./-](\d{2})$/;
 var exp_csv = /csv/gi;
 var exp_txt = /txt/gi;
 var exp_num = /^([0-9]*)\.?[0-9]+$/;
-//let exp_num2 = /^((0+)[0-9]*)\.?[0-9]+$/;
 let exp_num2 = /^((0+)([0-9]+))$/;
 
 
@@ -45,7 +44,6 @@ function readFile(){
 
     if (namefile.match(exp_csv) || namefile.match(exp_txt) ) {
      data = iconv.decode(fs.readFileSync(namefile), codificacion)
-
 .split('\n') //separamos por salto de linea
     .map(element => element.trim()) //removemos espacion en blanco
     .map(element => element.split('|').
@@ -54,8 +52,12 @@ function readFile(){
     
 //quitamos la parte de los encabezados
 val = data.splice(1);
+
+let value  = val.filter(valor =>{
+  return valor.length > 1
+});
 /*evaluamos si es number  o string*/
-values = val.map(element=>{
+values = value.map(element=>{
  for(i in element){
   if(!element[i].match(exp_num)){
     element[i] = element[i];
@@ -80,7 +82,10 @@ values = val.map(element=>{
 //quitamos la parte de los encabezados
 val = data.splice(1);
 /*evaluamos si es number  o string*/
-values = val.map(element=>{
+let value  = val.filter(valor =>{
+  return valor.length > 1
+});
+values = value.map(element=>{
  for(i in element){
   if(!element[i].match(exp_num)){
     element[i] = element[i];
@@ -133,7 +138,7 @@ try {
   if(namefile.includes('COMPROBANTES')||namefile.includes('DC')){
 
     aux_array = date();
-
+    aux_rows = aux_array.map(element=>{for (i in element){element[1]  = element[1].toString();}return element;});
 
     function insertComprobantes(){
 
@@ -151,10 +156,10 @@ try {
           :31,:32,:33,:34,:35,:36,:37,:38,:39,:40,:41,:42,:43,:44,:45,:46,:47,:48
           )`;
 
-          result = await connection.executeMany(sql,aux_array);
+          result = await connection.executeMany(sql,aux_rows);
 
           if(result){
-            return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + aux_array.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
+            return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + aux_rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
           }else{
 
             throw new Error ('error al realizar la inserccion');
@@ -309,6 +314,14 @@ connection.commit();
 
 else if(namefile.includes('NOMINA')||namefile.includes('CNR')){
  aux_array = date();
+
+ aux_rows = aux_array.map(element=>{for (i in element){ element[0]  = element[0].toString();
+  element[19]  = element[19].toString();
+  if(element[13] != null){ element[13]  = element[13].toString()}
+
+}return element;});
+
+
  function insertNomina(){
 
   try{
@@ -324,11 +337,11 @@ else if(namefile.includes('NOMINA')||namefile.includes('CNR')){
       CEDULAPROF,FOLIO_CFDI,VERSION,FECHATIMBRADO,SELLOCFD,NOCERTIFICADOSAT,SELLOSAT
       )  values(
       :1,:2,:3,:4,:5,:6,:7,:8,:9,:10,:11,:12,:13,:14,:15,:16,:17,:18,:19,:20,:21,:22,:23,:24,:25,:26,:27,:28,:29,:30,:31,:32,:33,:34,:35,:36,:37,:38,:39,:40,:41,:42,:43,:44,:45,:46,:47,:48,:49,:50,:51,:52,:53,:54,:55,:56,:57,:58,:59,:60,:61,:62,:63,:64,:65,:66,:67,:68)`;
-      result = await connection.executeMany(sql,aux_array);
+      result = await connection.executeMany(sql,aux_rows);
 
 
       if(result){
-        return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + aux_array.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
+        return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + aux_rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
 
       }else{
 
@@ -354,17 +367,16 @@ connection.commit();
 else if(namefile.includes('OTROSPAGOS')||namefile.includes('NOP')){
  rows = addNull();
 
- aux_rows = rows.map(element=>{for (i in element){element[2]  =element[2].toString();}return element;});
+ aux_rows = rows.map(element=>{for (i in element){element[1]  = element[1].toString();}return element;});
 
  function insertOtros_Pagos(){
 
   try{
     return new Promise( async function(succes,reject){
       sql = `INSERT INTO M4T_OTROSPAGOS_NOP_33_`+ nameisr+ `(IDOTROPAGO,IDNOMINA,TIPOOTROPAGO,CLAVE,CONCEPTO,IMPORTE,SUBSIDIOCAUSADO,SALDOAFAVOR,ANIO,REMANENTESALDOAFAVOR,IDUSUARIO,FG,ST) 
-
       values(:1, :2, :3, :4, :5 ,:6, :7, :8 ,:9,:10,:11,:12,:13)`;
 
-      result = await connection.executeMany(sql,rows);
+      result = await connection.executeMany(sql,aux_rows);
 
 
       if(result){
@@ -384,20 +396,14 @@ insertOtros_Pagos().then(function(succes){console.log(succes);})
 .catch(function(reject){ console.log(reject);});
 connection.commit();
 
-
-
-
 }
-
-
-
 
 
 /*####################### PERCEPCIONES ###########################*/
 
 else if(namefile.includes('PERCEPCIONES')||namefile.includes('CNP')){
  rows = addNull();
-
+ aux_rows = rows.map(element=>{for (i in element){element[1]  = element[1].toString();}return element;});
  function insertPercepciones(){
 
   try{
@@ -408,10 +414,10 @@ else if(namefile.includes('PERCEPCIONES')||namefile.includes('CNP')){
      INGRESOACUMULABLEPEN,INGRESONOACUMULABLEPEN,TOTALPAGADO,NUMANIOSSERVICIO,
      ULTIMOSUELDOMENSORD,INGRESOACUMULABLEINDEM,INGRESONOACUMULABLEINDEM,IDUSUARIO,FG,ST,TOTALPARCIALIDAD,MONTODIARIO ) 
      values(:1, :2, :3, :4, :5 ,:6, :7, :8 ,:9,:10,:11,:12,:13,:14,:15,:16,:17,:18,:19,:20)`;
-     result = await connection.executeMany(sql,rows);
+     result = await connection.executeMany(sql,aux_rows);
 
      if(result){
-      return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
+      return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + aux_rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
 
     }else{
 
@@ -435,6 +441,7 @@ connection.commit();
 
 else if(namefile.includes('PERCEPCION')||namefile.includes('NPD')){
  aux_array = date();
+ aux_rows = aux_array.map(element=>{for (i in element){element[2]  = element[2].toString();}return element;});
  function insertPercepcion(){
 
   try{
@@ -442,10 +449,10 @@ else if(namefile.includes('PERCEPCION')||namefile.includes('NPD')){
 
       sql = `INSERT INTO M4T_PERCEPCION_NPD_33_`+ nameisr+ `(IDPERCEPCION,IDPERCEPCIONES,IDNOMINA,TIPOPERCEPCION,CLAVE,CONCEPTO,IMPORTEGRAVADO,IMPORTEEXENTO,IMPORTETOTAL,FEC_IMPUTACION,FEC_PAGO,FEC_INICIO_P,FEC_FIN_P,IDUSUARIO,FG,ST,SERIE ) 
       values(:1, :2, :3, :4, :5 ,:6, :7, :8 ,:9,:10,:11,:12,:13,:14,:15,:16,:17)`;
-      result = await connection.executeMany(sql,aux_array);
+      result = await connection.executeMany(sql,aux_rows);
 
       if(result){
-        return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + aux_array.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
+        return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + aux_rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
 
       }else{
 
@@ -464,13 +471,6 @@ connection.commit();
 }
 
 
-
-
-
-
-
-
-
 }catch (err) {
   console.error(err);
 } finally {
@@ -486,5 +486,3 @@ connection.commit();
 }//termina la funcion run
 
 run();
-
-
