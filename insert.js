@@ -10,11 +10,12 @@ var iconv = require('iconv-lite');
 
 async function run() {
 
-  /*nombre del archivo*/
-  let namefile = "";
-
-//AQUI VA EL NOMBRE DEL ESQUEMA DONDE VAMOS A ALMACENAR
+//nombre del archivo
+let namefile = "";
+//Case ISR
 let nameisr = '';
+//Case Cancelación
+let iscancel = '';
 
 let connection;
 let values = new Array();
@@ -23,7 +24,8 @@ let longitud = new Array();
 let aux = new Array();
 let rows = new Array();
 let auxrows = new Array();
-let aux_array= new Array();
+
+//let aux_array= new Array();
 let result;
 let sql;
 let  data;
@@ -44,7 +46,8 @@ function readFile(){
 
     if (namefile.match(exp_csv) || namefile.match(exp_txt) ) {
      data = iconv.decode(fs.readFileSync(namefile), codificacion)
-.split('\n') //separamos por salto de linea
+     .replace(/,/gi,'|')//remplazamos , por | si es que viene delimitados por comas
+     .split('\n') //separamos por salto de linea
     .map(element => element.trim()) //removemos espacion en blanco
     .map(element => element.split('|').
       map(element => element.trim())
@@ -72,6 +75,7 @@ values = value.map(element=>{
 
  let  data = fs.readFileSync(namefile)
     .toString() // convertimos el buffer a string
+    .replace(/,/gi,'|')//remplazamos , por | si es que viene delimitados por comas
     .split('\n') //separamos por salto de linea
     .map(element => element.trim()) //removemos espacion en blanco
     .map(element => element.split('|').
@@ -99,6 +103,7 @@ values = value.map(element=>{
 return values;
 }
 
+
 function addNull(){
 
   datos = readFile();
@@ -112,7 +117,7 @@ function addNull(){
    for (i in rows){longitud = rows[i];
     for (j in longitud) {if(typeof(longitud[j])=== 'string'&& longitud[j].match(exp_yyyymmdd)){
       if(longitud[j].length == 10){
-        longitud[j]= moment(longitud[j]).format('DD/MM/YYYY')
+        longitud[j]= moment(longitud[j]).format('DD-MM-YYYY')
       }
     }
   }
@@ -122,27 +127,20 @@ return auxrows;
 }
 
 
-
-
 try {
 
   //generamos una conexión a la base de datos
   connection = await oracledb.getConnection({user: , password: , connectionString: });
   console.log("Conexión Exitosa !!!!");
 
-
-
-
   /*####################### ADDENDA ###########################*/
 
- if(namefile.match(/addenda/gi)){
+  if(namefile.match(/addenda/gi)){
 
     rows = addNull();
-
-
+    aux_rows = rows.map(element=>{for (i in element){element[0]  = element[0].toString();}return element;});
 
     function insertAddenda(){
-
 
       try{
         return new Promise( async function(succes,reject){
@@ -152,7 +150,7 @@ try {
           :1, :2, :3,:4,:5,:6,:7,:8,:9,:10,:11,:12,:13,:14,:15,:16,:17,:18,:19,:20,:21
           )`;
 
-          result = await connection.executeMany(sql,rows);
+          result = await connection.executeMany(sql,aux_rows);
 
           if(result){
             return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
@@ -169,8 +167,6 @@ try {
     .catch(function(reject){ console.log(reject);});
     connection.commit();
 
-
-
   }
 
 
@@ -178,8 +174,8 @@ try {
 
   else if(namefile.match(/comprobantes/gi)||namefile.includes('DC')){
 
-    aux_array = date();
-    aux_rows = aux_array.map(element=>{for (i in element){element[1]  = element[1].toString();}return element;});
+    rows = date();
+    aux_rows = rows.map(element=>{for (i in element){element[1]  = element[1].toString();}return element;});
 
     function insertComprobantes(){
 
@@ -200,7 +196,7 @@ try {
           result = await connection.executeMany(sql,aux_rows);
 
           if(result){
-            return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + aux_rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
+            return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
           }else{
 
             throw new Error ('error al realizar la inserccion');
@@ -221,13 +217,14 @@ try {
 
   else if(namefile.match(/deducciones/gi)||namefile.includes('CND')){
    rows = addNull();
+   aux_rows = rows.map(element=>{for (i in element){element[1]  = element[1].toString();}return element;});
 
    function insertDeducciones(){
     try{
       return new Promise( async function(succes,reject){
        sql = `INSERT INTO  M4T_DEDUCCIONES_CND_33_`+ nameisr+ `(IDDEDUCCIONES,IDNOMINA,TOTALOTRASDEDUCCIONES,TOTALIMPUESTOSRETENIDOS,IDUSUARIO,FG,ST)  values(:1, :2, :3, :4, :5 ,:6, :7)`;
 
-       result = await connection.executeMany(sql,rows);
+       result = await connection.executeMany(sql,aux_rows);
 
        if(result){
         return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
@@ -252,8 +249,8 @@ try {
 /*#######################  DEDUCCION  ###########################*/
 
 else if(namefile.match(/deduccion/gi)||namefile.includes('NDD')){
- aux_array = date();
- aux_rows = aux_array.map(element=>{for (i in element){ element[3]  = element[3].toString(); element[4]  = element[4].toString(); }return element;});
+ rows = date();
+ aux_rows = rows.map(element=>{for (i in element){  element[2]  = element[2].toString(); element[3]  = element[3].toString(); element[4]  = element[4].toString(); }return element;});
 
  function insertDeduccion(){
   try{
@@ -267,7 +264,7 @@ else if(namefile.match(/deduccion/gi)||namefile.includes('NDD')){
 
 
       if(result){
-        return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + aux_rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
+        return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
 
       }else{
 
@@ -289,13 +286,14 @@ connection.commit();
 
 else if(namefile.match(/horasextra/gi)||namefile.includes('CNH')){
  rows = addNull();
+ aux_rows = rows.map(element=>{for (i in element){  element[2]  = element[2].toString(); }return element;});
 
  function insertHrs_Extra(){
   try{
     return new Promise( async function(succes,reject){
       sql = `INSERT INTO M4T_HORASEXTRA_CNH_33_`+ nameisr+ `( IDHORAEXTRA,IDPERCEPCION,IDNOMINA,DIAS,TIPOHORAS,HORASEXTRA,IMPORTEPAGADO,IDUSUARIO,FG,ST)  values(:1, :2, :3, :4, :5 ,:6, :7, :8 ,:9, :10)`;
 
-      result = await connection.executeMany(sql,rows);
+      result = await connection.executeMany(sql,aux_rows);
 
 
       if(result){
@@ -321,13 +319,13 @@ connection.commit();
 
 else if(namefile.match(/incapacidades/gi)||namefile.includes('CNI')){
  rows = addNull();
-
+ aux_rows = rows.map(element=>{for (i in element){  element[1]  = element[1].toString(); }return element;});
  function insertIncapacidad(){
   try{
     return new Promise( async function(succes,reject){
       sql = `INSERT INTO M4T_INCAPACIDADES_CNI_33_`+ nameisr+ `( IDINCAPACIDAD,IDNOMINA,DIASINCAPACIDAD,TIPOINCAPACIDAD,IMPORTEMONETARIO,IDUSUARIO,FG,ST)  values(:1, :2, :3, :4, :5 ,:6, :7, :8)`;
 
-      result = await connection.executeMany(sql,rows);
+      result = await connection.executeMany(sql,aux_rows);
 
 
       if(result){
@@ -354,9 +352,9 @@ connection.commit();
 /*####################### NOMINA  ###########################*/
 
 else if(namefile.match(/nomina/gi)||namefile.includes('CNR')){
- aux_array = date();
+ rows = date();
 
- aux_rows = aux_array.map(element=>{for (i in element){ element[0]  = element[0].toString();
+ aux_rows = rows.map(element=>{for (i in element){ element[0]  = element[0].toString();
   element[19]  = element[19].toString();
   if(element[13] != null){ element[13]  = element[13].toString()}
 
@@ -382,7 +380,7 @@ else if(namefile.match(/nomina/gi)||namefile.includes('CNR')){
 
 
       if(result){
-        return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + aux_rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
+        return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
 
       }else{
 
@@ -399,9 +397,6 @@ insertNomina().then(function(succes){console.log(succes);})
 connection.commit();
 
 }
-
-
-
 
 /*#######################OTROS PAGOS ###########################*/
 
@@ -441,7 +436,6 @@ connection.commit();
 }
 
 
-
 /*####################### PERCEPCIONES ###########################*/
 
 else if(namefile.match(/percepciones/gi)||namefile.includes('CNP')){
@@ -479,12 +473,11 @@ connection.commit();
 
 
 
-
 /*####################### PERCEPCION ###########################*/
 
 else if(namefile.match(/percepcion/gi)||namefile.includes('NPD')){
- aux_array = date();
- aux_rows = aux_array.map(element=>{for (i in element){element[2]  = element[2].toString();}return element;});
+ rows = date();
+ aux_rows = rows.map(element=>{for (i in element){element[2]  = element[2].toString();}return element;});
  function insertPercepcion(){
 
   try{
@@ -495,7 +488,7 @@ else if(namefile.match(/percepcion/gi)||namefile.includes('NPD')){
       result = await connection.executeMany(sql,aux_rows);
 
       if(result){
-        return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + aux_rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
+        return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
 
       }else{
 
