@@ -6,16 +6,16 @@ const fs = require('fs');
 var moment = require('moment'); 
 const chardet = require('chardet');
 var iconv = require('iconv-lite');
-
+const readXlsxFile = require('read-excel-file/node')
 
 async function run() {
 
 //nombre del archivo
-let namefile = "";
+let namefile = ""
 //Case ISR
 let nameisr = '';
 //Case Cancelación
-let iscancel = '';
+let isTable = '';
 
 let connection;
 let values = new Array();
@@ -28,8 +28,9 @@ let auxrows = new Array();
 //let aux_array= new Array();
 let result;
 let sql;
-let  data;
-let  val;
+let data;
+let val;
+let query;
 let exp_yyyymmdd = /(\d{4})[./-](\d{2})[./-](\d{2})$/;
 var exp_csv = /csv/gi;
 var exp_txt = /txt/gi;
@@ -40,13 +41,47 @@ let exp_num2 = /^((0+)([0-9]+))$/;
 let codificacion = chardet.detectFileSync(namefile);
 console.log(codificacion);
 
+/*se verifica si el archivo es xlsx se ejecuta la  lectura del mismo*/
+
+if(namefile.includes('xlsx')){
+  readXlsxFile(fs.createReadStream(namefile)) .then(function(result){
+    aux = result.splice(1);
+    temp = aux.map(element=>{
+      for (i in element){
+        if( typeof(element[i])!= 'string'){
+          element[i] = JSON.stringify(element[i]).replace(/['"]+/g, '');
+        }else{
+          element[i]= element[i];
+        }
+      }
+      return element;
+    });
+
+    val = temp.map(item=>{
+      for(i in item){
+        if(item[i].match( /(\d{4})[./-](\d{2})[./-](\d{2})(T)?/)){
+          item[i] = item[i].substring(0,10)
+          item[i] = moment(item[i]).format('DD-MM-YYYY')
+        }
+        if(item[i] == 'null'){
+          item[i]= null;
+        }
+      }
+      return item;
+    });
+    return val;
+
+         });//termina la promesa
+
+}
 
 function readFile(){
   if(codificacion != 'UTF-8'){
 
-    if (namefile.match(exp_csv) || namefile.match(exp_txt) ) {
+
+   if (namefile.match(exp_csv) || namefile.match(exp_txt) ) {
      data = iconv.decode(fs.readFileSync(namefile), codificacion)
-     .replace(/,/gi,'|')//remplazamos , por | si es que viene delimitados por comas
+     //.replace(/,/gi,'|')//remplazamos , por | si es que viene delimitados por comas
      .split('\n') //separamos por salto de linea
     .map(element => element.trim()) //removemos espacion en blanco
     .map(element => element.split('|').
@@ -75,7 +110,7 @@ values = value.map(element=>{
 
  let  data = fs.readFileSync(namefile)
     .toString() // convertimos el buffer a string
-    .replace(/,/gi,'|')//remplazamos , por | si es que viene delimitados por comas
+    //.replace(/,/gi,'|')//remplazamos , por | si es que viene delimitados por comas
     .split('\n') //separamos por salto de linea
     .map(element => element.trim()) //removemos espacion en blanco
     .map(element => element.split('|').
@@ -130,235 +165,378 @@ return auxrows;
 try {
 
   //generamos una conexión a la base de datos
-  connection = await oracledb.getConnection({user: , password: , connectionString: });
+  connection = await oracledb.getConnection({user: "", password: "", connectionString: ""});
   console.log("Conexión Exitosa !!!!");
 
-  /*####################### ADDENDA ###########################*/
+  /*####################### CANCELACIONES ###########################*/
+  if(namefile.includes('xlsx')){
+    rows= val;
+    query  = await connection.execute(`select count(*) FROM M4T_CFDI_CANCEL_FOLIO_DGI_`+ isTable);
 
-  if(namefile.match(/addenda/gi)){
 
-    rows = addNull();
-    aux_rows = rows.map(element=>{for (i in element){element[0]  = element[0].toString();}return element;});
+    if(query.rows > 0){
 
-    function insertAddenda(){
+      console.log(`Existen ` +  `registros dentro de la tabla ` + `  M4T_CFDI_CANCEL_FOLIO_DGI_`+ isTable + ` ` + `Por ese motivo no se puede cargar`);
+
+    }else{
+
+     function insertCancel(){
 
       try{
+
         return new Promise( async function(succes,reject){
 
-          sql = `INSERT INTO ADDENDA_`+ nameisr+ `
-          (IDNOMINA,NUMERO_RECIBO,PLACA,SECTOR,DESTACAMENTO,USUARIO,CLAVE_COBRO,CARGO,GRADO,TN,TF,TA,TE,TI,TV,TP,TD,TAJUS,TIPO_CONTRATO,PERIODO_PAGO,CONCEPTO_PAGO) values(
-          :1, :2, :3,:4,:5,:6,:7,:8,:9,:10,:11,:12,:13,:14,:15,:16,:17,:18,:19,:20,:21
-          )`;
+         sql = `INSERT INTO M4T_CFDI_CANCEL_FOLIO_DGI_`+ isTable+ `
+         (ID_NOMINA,UUID,SERIE,FEC_PAGO,FEC_ULT_ACTUALIZACION,ID_USUARIO,FECHA_INGRESO,ESTATUS,FECHA_CANCELACION,ERROR,UUIDSUCURSAL,RFCEMISOR,MOTIVO_CANCELACION,UUID_SUSTITUCION) values(
+         :1, :2, :3,:4,:5,:6,:7,:8,:9,:10,:11,:12,:13,:14
+         )`;
+         result = await connection.executeMany(sql,rows);
 
-          result = await connection.executeMany(sql,aux_rows);
+         if(result){
+          return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
+        }else{
 
-          if(result){
-            return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
-          }else{
-
-            throw new Error ('error al realizar la inserccion');
-          }
-        });
+          throw new Error ('error al realizar la inserccion');
+        }
+      });
       }catch(e){
         return reject(e);
       }
     }
-    insertAddenda().then(function(succes){console.log(succes);})
+    insertCancel().then(function(succes){console.log(succes);})
     .catch(function(reject){ console.log(reject);});
     connection.commit();
 
   }
 
+}else if(namefile.match(/cancel/gi)){
 
-  /*####################### COMPROBANTES ###########################*/
+  rows = date();
 
-  else if(namefile.match(/comprobantes/gi)||namefile.includes('DC')){
+  query  = await connection.execute(`select count(*) FROM M4T_CFDI_CANCEL_FOLIO_DGI_`+ isTable);
 
-    rows = date();
-    aux_rows = rows.map(element=>{for (i in element){element[1]  = element[1].toString();}return element;});
+  if(query.rows > 0){
 
-    function insertComprobantes(){
+    console.log(`Existen ` +  `registros dentro de la tabla ` + `  M4T_CFDI_CANCEL_FOLIO_DGI_`+ isTable + ` ` + `Por ese motivo no se puede cargar`);
 
+  }else{
 
-      try{
-        return new Promise( async function(succes,reject){
+   function cancelInsert(){
 
-          sql = `INSERT INTO M4T_COMPROBANTES_DC_33_`+ nameisr+ `
-          (IDCOMPROBANTE,IDNOMINA,VERSION,SERIE,FOLIO,FECHA,FORMADEPAGO,SUBTOTAL,DESCUENTO,TOTAL,METODODEPAGO,
-          TIPODECOMPROBANTE,MONEDA,LUGAREXPEDICION,RFCEMISOR,NOMBREEMISOR,REGIMENFISCALEMISOR,CURPEMISOR,REGISTROPATRONAL
-          ,RFCPATRONORIGEN,ORIGENRECURSO,CANTIDAD,DESCRIPCION,VALORUNITARIO,IMPORTE,PARA,CC,CCO,PROCESADO,ESTATUS,ID_UNIDAD_ADM,IDUSUARIO,
-          FG,ST,MONTORECURSOPROPIO,IDSUCURSAL,CONDICIONESDEPAGO,TIPORELACION,UUID,USODECFDI,CLAVEPRODSERV,
-          NOIDENTIFICACION,CLAVEUNIDAD,BASE,IMPUESTO,TIPOFACTOR,TASAOCUOTA,UUIDSUCURSAL) values(
-          :1, :2, :3,:4,:5,:6,:7,:8,:9,:10,:11,:12,:13,:14,:15,:16,:17,:18,:19,:20,:21,:22,:23,:24,:25,:26,:27,:28,:29,:30,
-          :31,:32,:33,:34,:35,:36,:37,:38,:39,:40,:41,:42,:43,:44,:45,:46,:47,:48
-          )`;
-
-          result = await connection.executeMany(sql,aux_rows);
-
-          if(result){
-            return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
-          }else{
-
-            throw new Error ('error al realizar la inserccion');
-          }
-        });
-      }catch(e){
-        return reject(e);
-      }
-    }
-    insertComprobantes().then(function(succes){console.log(succes);})
-    .catch(function(reject){ console.log(reject);});
-    connection.commit();
-
-  }
-
-
-  /*#######################  DEDUCCIONES ###########################*/
-
-  else if(namefile.match(/deducciones/gi)||namefile.includes('CND')){
-   rows = addNull();
-   aux_rows = rows.map(element=>{for (i in element){element[1]  = element[1].toString();}return element;});
-
-   function insertDeducciones(){
     try{
       return new Promise( async function(succes,reject){
-       sql = `INSERT INTO  M4T_DEDUCCIONES_CND_33_`+ nameisr+ `(IDDEDUCCIONES,IDNOMINA,TOTALOTRASDEDUCCIONES,TOTALIMPUESTOSRETENIDOS,IDUSUARIO,FG,ST)  values(:1, :2, :3, :4, :5 ,:6, :7)`;
 
-       result = await connection.executeMany(sql,aux_rows);
+        sql = `INSERT INTO M4T_CFDI_CANCEL_FOLIO_DGI_`+ isTable+ `
+        (ID_NOMINA,UUID,SERIE,FEC_PAGO,FEC_ULT_ACTUALIZACION,ID_USUARIO,FECHA_INGRESO,ESTATUS,FECHA_CANCELACION,ERROR,UUIDSUCURSAL,RFCEMISOR,MOTIVO_CANCELACION,UUID_SUSTITUCION) values(
+        :1, :2, :3,:4,:5,:6,:7,:8,:9,:10,:11,:12,:13,:14
+        )`;
+        result = await connection.executeMany(sql,rows);
 
-       if(result){
-        return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
-
-      }else{
-
-       throw new Error('error al realizar la inserccion');
-     }
-   });
+        if(result){
+          return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
+        }else{
+         throw new Error ('error al realizar la inserccion');
+       }
+     });
     }catch(e){
-
       return reject(e);
     }
   }
-  insertDeducciones().then(function(succes){console.log(succes);})
+  cancelInsert().then(function(succes){console.log(succes);})
   .catch(function(reject){ console.log(reject);});
   connection.commit();
 }
 
+}
+
+/*####################### ADDENDA ###########################*/
+
+else  if(namefile.match(/addenda/gi)){
+
+
+ query  = await connection.execute(`select count(*) FROM ADDENDA_`+ nameisr);
+
+ if(query.rows > 0){
+
+  console.log(`Existen ` +  `registros dentro de la tabla ` + ` ADDENDA_`+ nameisr + ` ` + `Por ese motivo no se puede cargar`);
+
+}else{
+
+  rows = addNull();
+  aux_rows = rows.map(element=>{for (i in element){element[0]  = element[0].toString();}return element;});
+
+  function insertAddenda(){
+
+    try{
+      return new Promise( async function(succes,reject){
+
+        sql = `INSERT INTO ADDENDA_`+ nameisr+ `
+        (IDNOMINA,NUMERO_RECIBO,PLACA,SECTOR,DESTACAMENTO,USUARIO,CLAVE_COBRO,CARGO,GRADO,TN,TF,TA,TE,TI,TV,TP,TD,TAJUS,TIPO_CONTRATO,PERIODO_PAGO,CONCEPTO_PAGO) values(
+        :1, :2, :3,:4,:5,:6,:7,:8,:9,:10,:11,:12,:13,:14,:15,:16,:17,:18,:19,:20,:21
+        )`;
+
+        result = await connection.executeMany(sql,aux_rows);
+
+        if(result){
+          return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
+        }else{
+
+          throw new Error ('error al realizar la inserccion');
+        }
+      });
+    }catch(e){
+      return reject(e);
+    }
+  }
+  insertAddenda().then(function(succes){console.log(succes);})
+  .catch(function(reject){ console.log(reject);});
+  connection.commit();
+}
+}
+
+
+/*####################### COMPROBANTES ###########################*/
+
+else if(namefile.match(/comprobantes/gi)||namefile.includes('DC')){
+
+
+ query  = await connection.execute(`select count(*) FROM M4T_COMPROBANTES_DC_33_`+ nameisr);
+
+ if(query.rows > 0){
+
+  console.log(`Existen ` +  `registros dentro de la tabla ` + ` M4T_COMPROBANTES_DC_33_`+ nameisr + ` ` + `Por ese motivo no se puede cargar`);
+
+}else{
+
+  rows = date();
+  aux_rows = rows.map(element=>{for (i in element){element[1]  = element[1].toString();}return element;});
+
+  function insertComprobantes(){
+
+    try{
+      return new Promise( async function(succes,reject){
+
+        sql = `INSERT INTO M4T_COMPROBANTES_DC_33_`+ nameisr+ `
+        (IDCOMPROBANTE,IDNOMINA,VERSION,SERIE,FOLIO,FECHA,FORMADEPAGO,SUBTOTAL,DESCUENTO,TOTAL,METODODEPAGO,
+        TIPODECOMPROBANTE,MONEDA,LUGAREXPEDICION,RFCEMISOR,NOMBREEMISOR,REGIMENFISCALEMISOR,CURPEMISOR,REGISTROPATRONAL
+        ,RFCPATRONORIGEN,ORIGENRECURSO,CANTIDAD,DESCRIPCION,VALORUNITARIO,IMPORTE,PARA,CC,CCO,PROCESADO,ESTATUS,ID_UNIDAD_ADM,IDUSUARIO,
+        FG,ST,MONTORECURSOPROPIO,IDSUCURSAL,CONDICIONESDEPAGO,TIPORELACION,UUID,USODECFDI,CLAVEPRODSERV,
+        NOIDENTIFICACION,CLAVEUNIDAD,BASE,IMPUESTO,TIPOFACTOR,TASAOCUOTA,UUIDSUCURSAL) values(
+        :1, :2, :3,:4,:5,:6,:7,:8,:9,:10,:11,:12,:13,:14,:15,:16,:17,:18,:19,:20,:21,:22,:23,:24,:25,:26,:27,:28,:29,:30,
+        :31,:32,:33,:34,:35,:36,:37,:38,:39,:40,:41,:42,:43,:44,:45,:46,:47,:48
+        )`;
+
+        result = await connection.executeMany(sql,aux_rows);
+
+        if(result){
+          return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
+        }else{
+
+          throw new Error ('error al realizar la inserccion');
+        }
+      });
+    }catch(e){
+      return reject(e);
+    }
+  }
+  insertComprobantes().then(function(succes){console.log(succes);})
+  .catch(function(reject){ console.log(reject);});
+  connection.commit();
+
+}//temrina el else de comparacion de tabla vacia
+}
+
+
+/*#######################  DEDUCCIONES ###########################*/
+
+else if(namefile.match(/deducciones/gi)||namefile.includes('CND')){
+
+ query  = await connection.execute(`select count(*) FROM M4T_DEDUCCIONES_CND_33_`+ nameisr);
+
+ if(query.rows > 0){
+
+  console.log(`Existen ` +  `registros dentro de la tabla ` + ` M4T_DEDUCCIONES_CND_33_`+ nameisr + ` ` + `Por ese motivo no se puede cargar`);
+  
+}else{
+
+ rows = addNull();
+ aux_rows = rows.map(element=>{for (i in element){element[1]  = element[1].toString();}return element;});
+
+ function insertDeducciones(){
+  try{
+    return new Promise( async function(succes,reject){
+     sql = `INSERT INTO  M4T_DEDUCCIONES_CND_33_`+ nameisr+ `(IDDEDUCCIONES,IDNOMINA,TOTALOTRASDEDUCCIONES,TOTALIMPUESTOSRETENIDOS,IDUSUARIO,FG,ST)  values(:1, :2, :3, :4, :5 ,:6, :7)`;
+
+     result = await connection.executeMany(sql,aux_rows);
+
+     if(result){
+      return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
+
+    }else{
+
+     throw new Error('error al realizar la inserccion');
+   }
+ });
+  }catch(e){
+
+    return reject(e);
+  }
+}
+insertDeducciones().then(function(succes){console.log(succes);})
+.catch(function(reject){ console.log(reject);});
+connection.commit();
+}
+
+}
 
 
 /*#######################  DEDUCCION  ###########################*/
 
 else if(namefile.match(/deduccion/gi)||namefile.includes('NDD')){
- rows = date();
- aux_rows = rows.map(element=>{for (i in element){  element[2]  = element[2].toString(); element[3]  = element[3].toString(); element[4]  = element[4].toString(); }return element;});
 
- function insertDeduccion(){
-  try{
-    return new Promise( async function(succes,reject){
-      sql = `INSERT INTO M4T_DEDUCCION_NDD_33_`+ nameisr+ `
-      (IDDEDUCCION,IDDEDUCCIONES,IDNOMINA,TIPODEDUCCION,CLAVE,CONCEPTO,IMPORTE,FEC_IMPUTACION,FEC_PAGO,TIPO_PRESTAMO,SUBTIPO_PRESTAMO,IDUSUARIO,FG,ST,SERIE,IMPORTEGRAVADO,IMPORTEEXENTO) values(
-      :1, :2, :3,:4,:5,:6,:7,:8,:9,:10,:11,:12,:13,:14,:15,:16,:17
-      )`;
+  query  = await connection.execute(`select count(*) FROM M4T_DEDUCCION_NDD_33_`+ nameisr);
 
-      result = await connection.executeMany(sql,aux_rows);
+  if(query.rows > 0){
+    console.log(`Existen ` +  `registros dentro de la tabla ` + ` M4T_DEDUCCION_NDD_33_`+ nameisr + ` ` + `Por ese motivo no se puede cargar`);
+
+  }else{
+
+   rows = date();
+   aux_rows = rows.map(element=>{for (i in element){  element[2]  = element[2].toString(); element[3]  = element[3].toString(); element[4]  = element[4].toString(); }return element;});
+
+   function insertDeduccion(){
+    try{
+      return new Promise( async function(succes,reject){
+        sql = `INSERT INTO M4T_DEDUCCION_NDD_33_`+ nameisr+ `
+        (IDDEDUCCION,IDDEDUCCIONES,IDNOMINA,TIPODEDUCCION,CLAVE,CONCEPTO,IMPORTE,FEC_IMPUTACION,FEC_PAGO,TIPO_PRESTAMO,SUBTIPO_PRESTAMO,IDUSUARIO,FG,ST,SERIE,IMPORTEGRAVADO,IMPORTEEXENTO) values(
+        :1, :2, :3,:4,:5,:6,:7,:8,:9,:10,:11,:12,:13,:14,:15,:16,:17
+        )`;
+
+        result = await connection.executeMany(sql,aux_rows);
 
 
-      if(result){
-        return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
+        if(result){
+          return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
 
-      }else{
+        }else{
 
-       throw new Error('error al realizar la inserccion');
-     }
-   });
-  }catch(e){
+         throw new Error('error al realizar la inserccion');
+       }
+     });
+    }catch(e){
 
-    return reject(e);
+      return reject(e);
+    }
   }
+  insertDeduccion().then(function(succes){console.log(succes);})
+  .catch(function(reject){ console.log(reject);});
+  connection.commit();
 }
-insertDeduccion().then(function(succes){console.log(succes);})
-.catch(function(reject){ console.log(reject);});
-connection.commit();
 }
-
 
 /*#######################  HORAS EXTRA ###########################*/
 
 else if(namefile.match(/horasextra/gi)||namefile.includes('CNH')){
- rows = addNull();
- aux_rows = rows.map(element=>{for (i in element){  element[2]  = element[2].toString(); }return element;});
 
- function insertHrs_Extra(){
-  try{
-    return new Promise( async function(succes,reject){
-      sql = `INSERT INTO M4T_HORASEXTRA_CNH_33_`+ nameisr+ `( IDHORAEXTRA,IDPERCEPCION,IDNOMINA,DIAS,TIPOHORAS,HORASEXTRA,IMPORTEPAGADO,IDUSUARIO,FG,ST)  values(:1, :2, :3, :4, :5 ,:6, :7, :8 ,:9, :10)`;
+  query  = await connection.execute(`select count(*) FROM M4T_HORASEXTRA_CNH_33_`+ nameisr);
 
-      result = await connection.executeMany(sql,aux_rows);
+  if(query.rows > 0){
+    console.log(`Existen ` +  `registros dentro de la tabla ` + ` M4T_HORASEXTRA_CNH_33_`+ nameisr + ` ` + `Por ese motivo no se puede cargar`);
+
+  }else{
+
+   rows = addNull();
+   aux_rows = rows.map(element=>{for (i in element){  element[2]  = element[2].toString(); }return element;});
+
+   function insertHrs_Extra(){
+    try{
+      return new Promise( async function(succes,reject){
+        sql = `INSERT INTO M4T_HORASEXTRA_CNH_33_`+ nameisr+ `( IDHORAEXTRA,IDPERCEPCION,IDNOMINA,DIAS,TIPOHORAS,HORASEXTRA,IMPORTEPAGADO,IDUSUARIO,FG,ST)  values(:1, :2, :3, :4, :5 ,:6, :7, :8 ,:9, :10)`;
+
+        result = await connection.executeMany(sql,aux_rows);
 
 
-      if(result){
-        return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
+        if(result){
+          return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
 
-      }else{
+        }else{
 
-       throw new Error('error al realizar la inserccion');
-     }
-   });
-  }catch(e){
+         throw new Error('error al realizar la inserccion');
+       }
+     });
+    }catch(e){
 
-    return reject(e);
+      return reject(e);
+    }
   }
+  insertHrs_Extra().then(function(succes){console.log(succes);})
+  .catch(function(reject){ console.log(reject);});
+  connection.commit();
 }
-insertHrs_Extra().then(function(succes){console.log(succes);})
-.catch(function(reject){ console.log(reject);});
-connection.commit();
 }
 
 
 /*####################### INCAPACIDADES ###########################*/
 
 else if(namefile.match(/incapacidades/gi)||namefile.includes('CNI')){
- rows = addNull();
- aux_rows = rows.map(element=>{for (i in element){  element[1]  = element[1].toString(); }return element;});
- function insertIncapacidad(){
-  try{
-    return new Promise( async function(succes,reject){
-      sql = `INSERT INTO M4T_INCAPACIDADES_CNI_33_`+ nameisr+ `( IDINCAPACIDAD,IDNOMINA,DIASINCAPACIDAD,TIPOINCAPACIDAD,IMPORTEMONETARIO,IDUSUARIO,FG,ST)  values(:1, :2, :3, :4, :5 ,:6, :7, :8)`;
-
-      result = await connection.executeMany(sql,aux_rows);
 
 
-      if(result){
-        return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
+  query  = await connection.execute(`select count(*) FROM M4T_INCAPACIDADES_CNI_33_`+ nameisr);
 
-      }else{
+  if(query.rows > 0){
+    console.log(`Existen ` +  `registros dentro de la tabla ` + ` M4T_INCAPACIDADES_CNI_33_`+ nameisr + ` ` + `Por ese motivo no se puede cargar`);
 
-       throw new Error('error al realizar la inserccion');
-     }
-   });
-  }catch(e){
+  }else{
 
-    return reject(e);
+   rows = addNull();
+   aux_rows = rows.map(element=>{for (i in element){  element[1]  = element[1].toString(); }return element;});
+   function insertIncapacidad(){
+    try{
+      return new Promise( async function(succes,reject){
+        sql = `INSERT INTO M4T_INCAPACIDADES_CNI_33_`+ nameisr+ `( IDINCAPACIDAD,IDNOMINA,DIASINCAPACIDAD,TIPOINCAPACIDAD,IMPORTEMONETARIO,IDUSUARIO,FG,ST)  values(:1, :2, :3, :4, :5 ,:6, :7, :8)`;
+
+        result = await connection.executeMany(sql,aux_rows);
+
+
+        if(result){
+          return   succes( "Registros en el documento"+ ' ' +  namefile + ': ' + rows.length + "\n" + result.rowsAffected + ' '+ "Registros insertados");
+
+        }else{
+
+         throw new Error('error al realizar la inserccion');
+       }
+     });
+    }catch(e){
+
+      return reject(e);
+    }
   }
+  insertIncapacidad().then(function(succes){console.log(succes);})
+  .catch(function(reject){ console.log(reject);});
+  connection.commit();
 }
-insertIncapacidad().then(function(succes){console.log(succes);})
-.catch(function(reject){ console.log(reject);});
-connection.commit();
 }
-
-
 
 
 /*####################### NOMINA  ###########################*/
 
 else if(namefile.match(/nomina/gi)||namefile.includes('CNR')){
+
+ query  = await connection.execute(`select count(*) FROM M4T_NOMINA12_CNR_33_`+ nameisr);
+
+ if(query.rows > 0){
+  console.log(`Existen ` +  `registros dentro de la tabla ` + ` M4T_NOMINA12_CNR_33_`+ nameisr + ` ` + `Por ese motivo no se puede cargar`);
+  
+}else{
+
+
  rows = date();
 
  aux_rows = rows.map(element=>{for (i in element){ element[0]  = element[0].toString();
-  element[19]  = element[19].toString();
-  if(element[13] != null){ element[13]  = element[13].toString()}
+  if(element[19] != null){ element[19]  = element[19].toString()}
+    if(element[13] != null){ element[13]  = element[13].toString()}
 
-}return element;});
+  }return element;});
 
 
  function insertNomina(){
@@ -397,10 +575,18 @@ insertNomina().then(function(succes){console.log(succes);})
 connection.commit();
 
 }
+}
 
 /*#######################OTROS PAGOS ###########################*/
 
 else if(namefile.match(/otrospagos/gi)||namefile.includes('NOP')){
+ query  = await connection.execute(`select count(*) FROM M4T_OTROSPAGOS_NOP_33_`+ nameisr);
+
+ if(query.rows > 0){
+  console.log(`Existen ` +  `registros dentro de la tabla ` + ` M4T_OTROSPAGOS_NOP_33_`+ nameisr + ` ` + `Por ese motivo no se puede cargar`);
+  
+}else{
+
  rows = addNull();
 
  aux_rows = rows.map(element=>{for (i in element){element[1]  = element[1].toString(); element[2]  = element[2].toString();}return element;});
@@ -432,13 +618,20 @@ insertOtros_Pagos().then(function(succes){console.log(succes);})
 .catch(function(reject){ console.log(reject);});
 connection.commit();
 
-
 }
-
+}
 
 /*####################### PERCEPCIONES ###########################*/
 
 else if(namefile.match(/percepciones/gi)||namefile.includes('CNP')){
+
+ query  = await connection.execute(`select count(*) FROM M4T_PERCEPCIONES_CNP_33_`+ nameisr);
+
+ if(query.rows > 0){
+  console.log(`Existen ` +  `registros dentro de la tabla ` + ` M4T_PERCEPCIONES_CNP_33_`+ nameisr + ` ` + `Por ese motivo no se puede cargar`);
+  
+}else{
+
  rows = addNull();
  aux_rows = rows.map(element=>{for (i in element){element[1]  = element[1].toString();}return element;});
  function insertPercepciones(){
@@ -470,12 +663,19 @@ insertPercepciones().then(function(succes){console.log(succes);})
 .catch(function(reject){ console.log(reject);});
 connection.commit();
 }
-
-
+}
 
 /*####################### PERCEPCION ###########################*/
 
 else if(namefile.match(/percepcion/gi)||namefile.includes('NPD')){
+
+ query  = await connection.execute(`select count(*) FROM M4T_PERCEPCION_NPD_33_`+ nameisr);
+
+ if(query.rows > 0){
+  console.log(`Existen ` +  `registros dentro de la tabla ` + ` M4T_PERCEPCION_NPD_33_`+ nameisr + ` ` + `Por ese motivo no se puede cargar`);
+  
+}else{
+
  rows = date();
  aux_rows = rows.map(element=>{for (i in element){element[2]  = element[2].toString();}return element;});
  function insertPercepcion(){
@@ -503,9 +703,8 @@ else if(namefile.match(/percepcion/gi)||namefile.includes('NPD')){
 insertPercepcion().then(function(succes){console.log(succes);})
 .catch(function(reject){ console.log(reject);});
 connection.commit();
-
 }
-
+}
 
 }catch (err) {
   console.error(err);
